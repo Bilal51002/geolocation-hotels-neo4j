@@ -1,0 +1,4 @@
+Flask>=3.0,<4
+flask-cors>=5,<7
+neo4j>=5,<7
+requests>=2.31,<3
