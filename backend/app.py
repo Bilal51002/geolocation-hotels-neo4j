@@ -4,6 +4,7 @@ import os
 import time
 from osm_service import import_hotels_nearby
 
+import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from neo4j import GraphDatabase
@@ -383,6 +384,408 @@ def nearby_hotels():
 
 
 # ============================================================
+# ROUTE D'ITINÉRAIRE RÉEL (PROXY OSRM)
+# ============================================================
+
+OSRM_BASE_URL = os.getenv(
+    "OSRM_BASE_URL",
+    "https://router.project-osrm.org",
+)
+
+OSRM_PROFILES = {
+    "foot": "foot",
+    "walking": "foot",
+    "car": "driving",
+    "driving": "driving",
+    "bike": "bike",
+    "cycling": "bike",
+}
+
+
+@app.get("/api/route")
+def get_route():
+    """
+    Calculer un itinéraire routier réel entre deux points
+    en s'appuyant sur un serveur OSRM public.
+
+    Paramètres attendus dans l'URL :
+
+    start_lat, start_lon :
+        position de départ (l'utilisateur).
+
+    end_lat, end_lon :
+        position d'arrivée (l'hôtel).
+
+    profile :
+        mode de déplacement : "foot", "car" ou "bike".
+        Valeur par défaut : "car".
+
+    Exemple :
+
+    /api/route
+        ?start_lat=34.0331&start_lon=-5.0003
+        &end_lat=34.0450&end_lon=-4.9800
+        &profile=car
+    """
+
+    try:
+        start_lat = float(request.args["start_lat"])
+        start_lon = float(request.args["start_lon"])
+        end_lat = float(request.args["end_lat"])
+        end_lon = float(request.args["end_lon"])
+
+    except (KeyError, ValueError):
+        return jsonify(
+            {
+                "error": (
+                    "Les paramètres start_lat, start_lon, "
+                    "end_lat et end_lon sont obligatoires "
+                    "et doivent être des nombres valides."
+                )
+            }
+        ), 400
+
+    profile_key = request.args.get("profile", "car")
+    osrm_profile = OSRM_PROFILES.get(profile_key)
+
+    if osrm_profile is None:
+        return jsonify(
+            {
+                "error": (
+                    "Le paramètre 'profile' doit valoir "
+                    "'foot', 'car' ou 'bike'."
+                )
+            }
+        ), 400
+
+    # OSRM attend les coordonnées au format longitude,latitude
+    coordinates = (
+        f"{start_lon},{start_lat};{end_lon},{end_lat}"
+    )
+
+    url = (
+        f"{OSRM_BASE_URL}/route/v1/{osrm_profile}/"
+        f"{coordinates}"
+    )
+
+    try:
+        response = requests.get(
+            url,
+            params={
+                "overview": "full",
+                "geometries": "geojson",
+            },
+            timeout=15,
+        )
+
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("code") != "Ok" or not data.get("routes"):
+            return jsonify(
+                {
+                    "error": (
+                        "Aucun itinéraire trouvé entre "
+                        "ces deux points."
+                    )
+                }
+            ), 404
+
+        route = data["routes"][0]
+
+        return jsonify(
+            {
+                "profile": profile_key,
+                "distance_metres": round(route["distance"]),
+                "duration_seconds": round(route["duration"]),
+                "geometry": route["geometry"],
+            }
+        )
+
+    except requests.RequestException as error:
+        print("Erreur pendant l'appel à OSRM :", error)
+
+        return jsonify(
+            {
+                "error": (
+                    "Le service de calcul d'itinéraire est "
+                    "actuellement indisponible."
+                ),
+                "details": str(error),
+            }
+        ), 502
+
+
+# ============================================================
+# ROUTE DE STATISTIQUES POUR LE DASHBOARD
+# ============================================================
+
+@app.get("/api/dashboard/stats")
+def dashboard_stats():
+    """
+    Calculer des statistiques globales sur les hôtels stockés
+    dans Neo4j, utilisées par le tableau de bord du frontend.
+    """
+
+    try:
+        # ----------------------------------------------------
+        # COMPTEURS GLOBAUX
+        # ----------------------------------------------------
+
+        summary_query = """
+        MATCH (h:Hotel)
+
+        RETURN
+            count(h) AS total,
+
+            count(
+                CASE WHEN h.stars IS NOT NULL
+                THEN 1 END
+            ) AS with_stars,
+
+            count(
+                CASE WHEN h.phone IS NOT NULL
+                THEN 1 END
+            ) AS with_phone,
+
+            count(
+                CASE WHEN h.address IS NOT NULL
+                    AND h.address <> 'Adresse non disponible'
+                THEN 1 END
+            ) AS with_address,
+
+            avg(h.location.latitude) AS centre_latitude,
+            avg(h.location.longitude) AS centre_longitude
+        """
+
+        summary_records, _, _ = driver.execute_query(
+            summary_query,
+            database_="neo4j",
+        )
+
+        summary = summary_records[0]
+        total = summary["total"]
+
+        # ----------------------------------------------------
+        # RÉPARTITION PAR ZONE (QUARTIERS DE FÈS)
+        # ----------------------------------------------------
+        #
+        # Les données OSM stockent des noms de ville très
+        # hétérogènes (variantes de casse, accents, arabe /
+        # latin, valeurs manquantes). Plutôt que de regrouper
+        # par h.city, on classe chaque hôtel dans le quartier
+        # de Fès dont il est géographiquement le plus proche,
+        # comme dans le tableau de bord de référence.
+        #
+        # NOTE : ces coordonnées sont spécifiques à Fès.
+        # Pour une autre ville, il faudrait adapter les points
+        # de référence ci-dessous.
+
+        zones_query = """
+        WITH
+            point({latitude: 34.0625, longitude: -4.9770})
+                AS fes_el_bali,
+            point({latitude: 34.0580, longitude: -5.0010})
+                AS fes_el_jdid,
+            point({latitude: 34.0400, longitude: -4.9850})
+                AS ville_nouvelle
+
+        MATCH (h:Hotel)
+
+        WITH
+            h,
+            point.distance(h.location, fes_el_bali)
+                AS distance_medina,
+            point.distance(h.location, fes_el_jdid)
+                AS distance_jdid,
+            point.distance(h.location, ville_nouvelle)
+                AS distance_nouvelle
+
+        WITH
+            h,
+            CASE
+                WHEN distance_medina <= distance_jdid
+                    AND distance_medina <= distance_nouvelle
+                    THEN distance_medina
+                WHEN distance_jdid <= distance_medina
+                    AND distance_jdid <= distance_nouvelle
+                    THEN distance_jdid
+                ELSE distance_nouvelle
+            END AS closest_distance,
+            CASE
+                WHEN distance_medina <= distance_jdid
+                    AND distance_medina <= distance_nouvelle
+                    THEN 'Fès el-Bali'
+                WHEN distance_jdid <= distance_medina
+                    AND distance_jdid <= distance_nouvelle
+                    THEN 'Fès el-Jdid'
+                ELSE 'Ville Nouvelle'
+            END AS closest_zone
+
+        WITH
+            CASE
+                WHEN closest_distance > 4000 THEN 'Périphérie'
+                ELSE closest_zone
+            END AS zone
+
+        RETURN zone, count(*) AS count
+        ORDER BY count DESC
+        """
+
+        zones_records, _, _ = driver.execute_query(
+            zones_query,
+            database_="neo4j",
+        )
+
+        zones = [
+            {
+                "zone": record["zone"],
+                "count": record["count"],
+            }
+            for record in zones_records
+        ]
+
+        # ----------------------------------------------------
+        # RÉPARTITION PAR ÉTOILES
+        # ----------------------------------------------------
+
+        stars_query = """
+        MATCH (h:Hotel)
+        WHERE h.stars IS NOT NULL
+        RETURN h.stars AS stars, count(h) AS count
+        ORDER BY stars ASC
+        """
+
+        stars_records, _, _ = driver.execute_query(
+            stars_query,
+            database_="neo4j",
+        )
+
+        by_stars = [
+            {
+                "stars": record["stars"],
+                "count": record["count"],
+            }
+            for record in stars_records
+        ]
+
+        # ----------------------------------------------------
+        # DISTRIBUTION PAR DISTANCE AU CENTRE
+        # ----------------------------------------------------
+
+        distance_bands = {
+            "0-1 km": 0,
+            "1-2 km": 0,
+            "2-3 km": 0,
+            "3-5 km": 0,
+            "5+ km": 0,
+        }
+
+        centre_latitude = summary["centre_latitude"]
+        centre_longitude = summary["centre_longitude"]
+
+        if (
+            total > 0
+            and centre_latitude is not None
+            and centre_longitude is not None
+        ):
+            distances_query = """
+            WITH point({
+                latitude: $latitude,
+                longitude: $longitude
+            }) AS centre
+
+            MATCH (h:Hotel)
+
+            RETURN
+                point.distance(centre, h.location) / 1000.0
+                AS distance_km
+            """
+
+            distances_records, _, _ = driver.execute_query(
+                distances_query,
+                latitude=centre_latitude,
+                longitude=centre_longitude,
+                database_="neo4j",
+            )
+
+            for record in distances_records:
+                distance_km = record["distance_km"]
+
+                if distance_km < 1:
+                    distance_bands["0-1 km"] += 1
+                elif distance_km < 2:
+                    distance_bands["1-2 km"] += 1
+                elif distance_km < 3:
+                    distance_bands["2-3 km"] += 1
+                elif distance_km < 5:
+                    distance_bands["3-5 km"] += 1
+                else:
+                    distance_bands["5+ km"] += 1
+
+        # ----------------------------------------------------
+        # MEILLEURS HÔTELS (LES MIEUX NOTÉS)
+        # ----------------------------------------------------
+
+        top_hotels_query = """
+        MATCH (h:Hotel)
+        WHERE h.stars IS NOT NULL
+        RETURN
+            h.name AS name,
+            h.stars AS stars,
+            h.address AS address
+        ORDER BY h.stars DESC, h.name ASC
+        LIMIT 6
+        """
+
+        top_hotels_records, _, _ = driver.execute_query(
+            top_hotels_query,
+            database_="neo4j",
+        )
+
+        top_hotels = [
+            {
+                "name": record["name"],
+                "stars": record["stars"],
+                "address": record["address"],
+            }
+            for record in top_hotels_records
+        ]
+
+        return jsonify(
+            {
+                "total": total,
+                "with_stars": summary["with_stars"],
+                "with_phone": summary["with_phone"],
+                "with_address": summary["with_address"],
+                "zones": zones,
+                "by_stars": by_stars,
+                "distance_distribution": [
+                    {"band": band, "count": count}
+                    for band, count in distance_bands.items()
+                ],
+                "top_hotels": top_hotels,
+            }
+        )
+
+    except Exception as error:
+        print(
+            "Erreur pendant le calcul des statistiques :",
+            error,
+        )
+
+        return jsonify(
+            {
+                "error": (
+                    "Impossible de calculer les statistiques "
+                    "du tableau de bord."
+                ),
+                "details": str(error),
+            }
+        ), 500
+
+
+# ============================================================
 # GESTION DES ROUTES INEXISTANTES
 # ============================================================
 
@@ -399,6 +802,8 @@ def route_not_found(error):
                 "/",
                 "/api/health",
                 "/api/hotels/nearby",
+                "/api/route",
+                "/api/dashboard/stats",
             ],
         }
     ), 404

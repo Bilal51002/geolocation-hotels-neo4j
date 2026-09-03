@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Hotel Finder — Dashboard</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <div class="navbar-brand-icon">🏨</div>
+
+            <div class="navbar-brand-text">
+                <h1>Hotel Finder</h1>
+                <span>Recherche géographique d'hôtels</span>
+            </div>
+        </div>
+
+        <div class="navbar-tabs">
+            <a href="index.html" class="navbar-tab">
+                🗺️ Carte
+            </a>
+
+            <a href="dashboard.html" class="navbar-tab active">
+                📊 Dashboard
+            </a>
+        </div>
+
+        <div class="navbar-badges">
+            <span class="navbar-badge">Neo4j</span>
+            <span class="navbar-badge badge-orange">
+                OpenStreetMap
+            </span>
+            <span class="navbar-badge badge-green">OSRM</span>
+        </div>
+    </nav>
+
+    <main class="page-container">
+        <div class="page-header">
+            <h2>📊 Dashboard — Hotel Finder</h2>
+            <p id="pageSubtitle">Chargement des statistiques...</p>
+        </div>
+
+        <div id="dashboardContent" style="display:none;">
+            <div class="stat-grid">
+                <div class="card stat-card">
+                    <div class="stat-icon orange">🏨</div>
+                    <div class="stat-value" id="statTotal">0</div>
+                    <div class="stat-label">Total hôtels</div>
+                </div>
+
+                <div class="card stat-card">
+                    <div class="stat-icon yellow">⭐</div>
+                    <div class="stat-value" id="statStars">0</div>
+                    <div class="stat-label">Avec étoiles</div>
+                </div>
+
+                <div class="card stat-card">
+                    <div class="stat-icon green">📞</div>
+                    <div class="stat-value" id="statPhone">0</div>
+                    <div class="stat-label">Avec contact</div>
+                </div>
+
+                <div class="card stat-card">
+                    <div class="stat-icon blue">📍</div>
+                    <div class="stat-value" id="statAddress">0</div>
+                    <div class="stat-label">Avec adresse</div>
+                </div>
+            </div>
+
+            <div class="chart-grid">
+                <div class="card chart-card">
+                    <h3>🗺️ Répartition par zone</h3>
+
+                    <div class="chart-canvas-wrap">
+                        <canvas id="zoneChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card chart-card">
+                    <h3>📶 Distribution par distance</h3>
+
+                    <div class="chart-canvas-wrap">
+                        <canvas id="distanceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <h3 style="
+                margin: 0 0 12px;
+                font-size: 14px;
+                color: var(--color-navy);
+            ">
+                ⭐ Hôtels classés par étoiles
+            </h3>
+
+            <div class="top-hotels-grid" id="topHotelsGrid">
+            </div>
+
+            <div class="card about-data">
+                <h3>ⓘ À propos des données</h3>
+
+                <div class="about-data-grid">
+                    <div class="about-data-item">
+                        <span style="font-size:16px;">🟢</span>
+                        <div>
+                            <span class="label">Source</span>
+                            <span class="value">
+                                OpenStreetMap via Overpass API
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="about-data-item">
+                        <span style="font-size:16px;">🗄️</span>
+                        <div>
+                            <span class="label">Stockage</span>
+                            <span class="value">
+                                Neo4j Graph Database
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="about-data-item">
+                        <span style="font-size:16px;">📏</span>
+                        <div>
+                            <span class="label">Distance</span>
+                            <span class="value">
+                                point.distance() natif Neo4j
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            id="dashboardEmpty"
+            class="card dashboard-empty"
+            style="display:none;"
+        >
+            <p>
+                Aucune donnée disponible pour le moment.<br>
+                Faites une recherche sur la
+                <a href="index.html">carte</a>
+                pour importer des hôtels depuis OpenStreetMap.
+            </p>
+        </div>
+    </main>
+
+    <footer class="footer">
+        Données OpenStreetMap · Base géospatiale Neo4j ·
+        Itinéraires calculés par OSRM
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="dashboard.js"></script>
+</body>
+</html>

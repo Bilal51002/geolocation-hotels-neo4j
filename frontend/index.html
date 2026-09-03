@@ -8,106 +8,17 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>Recherche géographique d'hôtels</title>
+    <title>Hotel Finder — Recherche géographique d'hôtels</title>
 
     <link
         rel="stylesheet"
         href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     >
-
-    <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <header class="header">
-        <div>
-            <h1>Recherche d'hôtels à proximité</h1>
+    <div id="root"></div>
 
-            <p>
-                Recherchez les hôtels proches de votre position
-                et affichez-les du plus proche au plus éloigné.
-            </p>
-        </div>
-    </header>
-
-    <main class="container">
-        <section class="search-panel">
-            <div class="control">
-                <label for="radius">
-                    Rayon de recherche
-                </label>
-
-                <select id="radius">
-                    <option value="500">
-                        500 mètres
-                    </option>
-
-                    <option value="1000">
-                        1 kilomètre
-                    </option>
-
-                    <option value="2000">
-                        2 kilomètres
-                    </option>
-
-                    <option value="5000" selected>
-                        5 kilomètres
-                    </option>
-
-                    <option value="10000">
-                        10 kilomètres
-                    </option>
-
-                    <option value="20000">
-                        20 kilomètres
-                    </option>
-                </select>
-            </div>
-
-            <div class="buttons">
-                <button
-                    id="locationButton"
-                    class="button button-primary"
-                    type="button"
-                >
-                    Utiliser ma position
-                </button>
-            </div>
-
-            <div id="status" class="status">
-                Sélectionnez une position pour commencer.
-            </div>
-        </section>
-
-        <section class="map-section">
-            <div id="map"></div>
-        </section>
-
-        <section class="results-section">
-            <div class="results-header">
-                <h2>Hôtels trouvés</h2>
-
-                <span id="resultCount" class="result-count">
-                    0 résultat
-                </span>
-            </div>
-
-            <div id="results" class="results">
-                <p class="empty-message">
-                    Aucun résultat à afficher.
-                </p>
-            </div>
-        </section>
-    </main>
-
-    <footer class="footer">
-        Carte basée sur les données OpenStreetMap
-    </footer>
-
-    <script
-        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    ></script>
-
-    <script src="app.js"></script>
+    <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
